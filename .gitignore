@@ -1,0 +1,16 @@
+# Python Byte-compiled / Optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Môi trường ảo (Virtual Environment)
+venv/
+env/
+.venv/
+
+
+# IDEs và OS files
+.vscode/
+.idea/
+.DS_Store
+%CACHE%/
