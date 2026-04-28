@@ -1,61 +1,14 @@
-import torch
-import copy
 import os
+import random
 
 import a2_260408 as cg_logic
-from coganh_env import CoGanhEnv
-from coganh_agent import DQN_CoGanh
+import coganh_agent  # <--- Đã import file Agent mới của chúng ta
 import random_agent
-
-# Thiết lập thiết bị tính toán
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Tải mô hình DQN
-policy_net = DQN_CoGanh().to(device)
-best_model_path = os.path.join(os.path.dirname(__file__), "model", "coganh_dqn_best.pth")
-model_path = best_model_path if os.path.exists(best_model_path) else os.path.join(os.path.dirname(__file__), "model", "coganh_dqn.pth")
-if os.path.exists(model_path):
-    try:
-        policy_net.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"[INFO] Tải trọng số DQN thành công từ {model_path}.")
-    except Exception as e:
-        print(f"[ERROR] Không thể tải model: {e}")
-else:
-    print(f"[WARNING] Không tìm thấy file model tại {model_path}. DQN sẽ chạy ngẫu nhiên với trọng số khởi tạo.")
-policy_net.eval()
-
-def dqn_move(board, player, mo_moves):
-    """
-    Sử dụng hàm move tĩnh thuần DQN, không dùng look-ahead.
-    """
-    env = CoGanhEnv()
-    # Deepcopy để không làm hỏng state thật
-    env.board = copy.deepcopy(board)
-    env.turn = player
-    env.mo_moves = copy.deepcopy(mo_moves)
-    
-    state = env.get_state()
-    valid_actions = env.get_valid_actions()
-    
-    if not valid_actions:
-        return None
-        
-    with torch.no_grad():
-        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
-        q_values = policy_net(state_tensor)[0]
-        # Tạo mask loại bỏ các nước đi không hợp lệ
-        mask = torch.full((200,), float('-inf')).to(device)
-        for a in valid_actions: 
-            mask[a] = 0.0
-        # Chọn nước đi có Q-value cao nhất
-        action_idx = torch.argmax(q_values + mask).item()
-        
-    return env.decode_action(action_idx)
 
 def play_game(agent_1, agent_2, agent_1_role):
     """
     Giả lập 1 ván cờ giới hạn tối đa 100 lượt đi.
-    agent_1: "dqn" (luôn là DQN)
+    agent_1: "dqn" (Bây giờ là Hybrid DQN-Minimax)
     agent_2: "random" hoặc "minimax"
     agent_1_role: 1 (đi trước) hoặc -1 (đi sau)
     """
@@ -86,7 +39,21 @@ def play_game(agent_1, agent_2, agent_1_role):
         # 3. Lấy nước đi của phe hiện tại
         move = None
         if current_player == agent_1_role:
-            move = dqn_move(board, current_player, mo_moves)
+            
+            # --- ĐÃ SỬA: SỬ DỤNG HYBRID AGENT ---
+            # Xử lý luật "Mở": Nếu đang bị đối phương Mở, bắt buộc phải đi vào chỗ đó
+            if mo_moves and len(mo_moves) > 0:
+                # Lấy các nước đi hợp lệ nằm trong danh sách bắt buộc
+                valid_mo = [m for m in cg_logic.get_valid_moves(board, current_player) if m in mo_moves]
+                if valid_mo:
+                    move = random.choice(valid_mo)
+                else:
+                    move = coganh_agent.move(board, current_player, remain_time=99)
+            else:
+                # Gọi Hybrid Alpha-Beta (Cho phép suy nghĩ 2.8s)
+                move = coganh_agent.move(board, current_player, remain_time=99)
+            # ------------------------------------
+            
         else:
             if agent_2 == "random":
                 move = random_agent.move(board, current_player, mo_moves=mo_moves)
@@ -109,7 +76,7 @@ def play_game(agent_1, agent_2, agent_1_role):
 
 def run_evaluation():
     print("=================================================")
-    print("Bắt đầu giả lập thi đấu DQN (Evaluation)...")
+    print("Bắt đầu giả lập thi đấu Hybrid DQN-Minimax (Evaluation)...")
     print("=================================================")
     
     results = {
@@ -122,10 +89,10 @@ def run_evaluation():
     num_games = 50 # 50 ván cho mỗi role (tổng 100 ván/đối thủ)
     
     for opp in opponents:
-        print(f"\n[DQN vs {opp.upper()}]")
+        print(f"\n[HYBRID vs {opp.upper()}]")
         for role in roles:
             role_name = "Đi trước" if role == 1 else "Đi sau  "
-            print(f"-> DQN {role_name}: ", end="", flush=True)
+            print(f"-> HYBRID {role_name}: ", end="", flush=True)
             
             for g in range(num_games):
                 winner = play_game("dqn", opp, role)
@@ -142,12 +109,12 @@ def run_evaluation():
 
     # Xuất báo cáo theo format yêu cầu
     report = []
-    report.append("BÁO CÁO KẾT QUẢ THI ĐẤU DQN (100 ván / Đối thủ)")
+    report.append("BÁO CÁO KẾT QUẢ THI ĐẤU HYBRID DQN-MINIMAX (100 ván / Đối thủ)")
     report.append("=================================================")
     
     for i, opp in enumerate(opponents):
         opp_name = "RANDOM AGENT" if opp == "random" else "MINIMAX AGENT (time_limit=0.1)"
-        report.append(f"{i+1}. DQN vs {opp_name}")
+        report.append(f"{i+1}. HYBRID vs {opp_name}")
         
         total_W = total_L = total_D = 0
         
@@ -164,7 +131,7 @@ def run_evaluation():
             win_rate = (w + d / 2.0) / num_games * 100
             
             role_str = "Đi trước" if role == 1 else "Đi sau  "
-            report.append(f"- DQN {role_str} ({num_games} ván): W: {w:2d}, L: {l:2d}, D: {d:2d} | Win Rate: {win_rate:5.1f}%")
+            report.append(f"- HYBRID {role_str} ({num_games} ván): W: {w:2d}, L: {l:2d}, D: {d:2d} | Win Rate: {win_rate:5.1f}%")
             
         total_games = num_games * 2
         total_win_rate = (total_W + total_D / 2.0) / total_games * 100

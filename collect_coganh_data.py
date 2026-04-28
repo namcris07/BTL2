@@ -64,7 +64,7 @@ def simulate_one_game(game_idx):
 
     return local_states, local_actions
 
-def collect_data_mp(num_games=10000, out_path=None):
+def collect_data_mp(num_games=1000, out_path=None):
     if out_path is None:
         out_path = os.path.join(os.path.dirname(__file__), "data", "coganh_teacher.npz")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -73,7 +73,7 @@ def collect_data_mp(num_games=10000, out_path=None):
     start_time = time.time()
     
     # Lấy số luồng CPU tối đa của máy, chừa lại 1 luồng để máy tính không bị đơ
-    num_cores = max(1, mp.cpu_count() - 1)
+    num_cores = max(1, mp.cpu_count() - 3)
     print(f"[INFO] Phát hiện CPU! Đang sử dụng {num_cores} luồng để chạy song song.")
 
     all_states = []
